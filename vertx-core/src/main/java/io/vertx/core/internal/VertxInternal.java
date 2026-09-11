@@ -11,9 +11,10 @@
 
 package io.vertx.core.internal;
 
-
 import io.netty.channel.EventLoopGroup;
 import io.vertx.core.*;
+import io.vertx.core.Closeable;
+import io.vertx.core.internal.eventbus.EventBusInternal;
 import io.vertx.core.http.impl.HttpClientBuilderInternal;
 import io.vertx.core.impl.*;
 import io.vertx.core.internal.deployment.DeploymentManager;
@@ -35,7 +36,7 @@ import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * This interface provides services for vert.x core internal use only
@@ -138,7 +139,37 @@ public interface VertxInternal extends Vertx {
 
   Cleaner cleaner();
 
-  <C> C createSharedResource(String resourceKey, String resourceName, CloseFuture closeFuture, Function<CloseFuture, C> supplier);
+  /**
+   * Register the {@code resource} against the current context or this vertx instance. When the owner closes,
+   * the {@code resource} is cascade closed.
+   *
+   * @param resource the actual resource
+   * @return the new resource to use or {@code null} when the resource could not be registered, e.g. on a vertx close
+   */
+  default <R extends io.vertx.core.internal.Closeable> CloseableResource<R> registerResource(R resource) {
+    return registerResource(CloseableResource.of(resource));
+  }
+
+  /**
+   * Register the {@code resource} against the current context or this vertx instance. When the owner closes,
+   * the {@code resource} is cascade closed.
+   *
+   * @param resource the actual resource
+   * @return the new resource to use or {@code null} when the resource could not be registered, e.g. on a vertx close
+   */
+  <R> CloseableResource<R> registerResource(CloseableResource<R> resource);
+
+  /**
+   * Create a shared resource using the resource {@code factory} identified by {@code resourceKey} and {@code resourceName}.
+   * The first registration creates the resource and keeps a reference on it. Subsequent registrations with the same key and
+   * name reuses it. The shared resource is reference counted and disposed when all resource returned by this method are closed.
+   *
+   * @param resourceKey the resource key
+   * @param resourceName the resource name
+   * @param factory the resource factory
+   * @return the shared resource
+   */
+  <R extends io.vertx.core.internal.Closeable> CloseableResource<R> createSharedResource(String resourceKey, String resourceName, Supplier<R> factory);
 
   HttpClientBuilderInternal httpClientBuilder();
 
@@ -195,7 +226,7 @@ public interface VertxInternal extends Vertx {
   @Override
   WorkerExecutorInternal createSharedWorkerExecutor(String name, int poolSize, long maxExecuteTime, TimeUnit maxExecuteTimeUnit);
 
-  WorkerPool createSharedWorkerPool(String name, int poolSize, long maxExecuteTime, TimeUnit maxExecuteTimeUnit);
+  CloseableResource<WorkerPool> createSharedWorkerPool(String name, int poolSize, long maxExecuteTime, TimeUnit maxExecuteTimeUnit);
 
   WorkerPool wrapWorkerPool(ExecutorService executor);
 
@@ -203,6 +234,8 @@ public interface VertxInternal extends Vertx {
     ContextInternal context = getOrCreateContext();
     return context.executeBlockingInternal(blockingCodeHandler);
   }
+
+  EventBusInternal eventBus();
 
   /**
    * @return the cluster manager

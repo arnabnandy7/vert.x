@@ -11,6 +11,7 @@
 package io.vertx.core.http.impl.http3;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
 import io.netty.handler.codec.http2.EmptyHttp2Headers;
 import io.netty.handler.codec.http3.*;
 import io.netty.util.ReferenceCountUtil;
@@ -27,7 +28,7 @@ import io.vertx.core.http.impl.headers.HttpResponseHeaders;
 import io.vertx.core.http.impl.observability.StreamObserver;
 import io.vertx.core.internal.ContextInternal;
 import io.vertx.core.internal.buffer.BufferInternal;
-import io.vertx.core.internal.quic.QuicStreamInternal;
+import io.vertx.core.internal.net.QuicStreamInternal;
 import io.vertx.core.net.impl.VertxHandler;
 
 /**
@@ -361,5 +362,9 @@ public abstract class Http3Stream<S extends Http3Stream<S, C>, C extends Http3Co
 
   public final ContextInternal context() {
     return context;
+  }
+
+  public final ByteBufAllocator allocator() {
+    return stream.channelHandlerContext().alloc();
   }
 }

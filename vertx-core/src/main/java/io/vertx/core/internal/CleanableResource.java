@@ -8,7 +8,7 @@
  *
  * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0
  */
-package io.vertx.core.impl;
+package io.vertx.core.internal;
 
 import io.vertx.core.Future;
 
@@ -17,46 +17,57 @@ import java.lang.ref.WeakReference;
 import java.time.Duration;
 
 /**
- * Base object for cleanable proxies.
+ * Base object for cleanable resource proxies, that means proxies that can be collected and if they do will release
+ * the actual underlying resource.
+ *
+ * @author <a href="mailto:julien@julienviet.com">Julien Viet</a>
  */
-public class CleanableObject<T> {
+public class CleanableResource<R> {
 
   public static final Duration DEFAULT_CLEAN_TIMEOUT = Duration.ofSeconds(30);
 
-  private static class Action<T> extends WeakReference<CleanableResource<T>> implements Runnable {
+  private static class Action<T> extends WeakReference<CloseableResource<? extends T>> implements Runnable {
 
     private Duration timeout = DEFAULT_CLEAN_TIMEOUT;
     private Future<Void> closeFuture;
 
-    public Action(CleanableResource<T> resource) {
+    public Action(CloseableResource<? extends T> resource) {
       super(resource);
     }
 
     @Override
     public void run() {
-      CleanableResource<T> d = get();
+      CloseableResource<? extends T> d = get();
       if (d != null) {
         closeFuture = d.shutdown(timeout);
+      } else {
+        closeFuture = Future.succeededFuture();
       }
     }
   }
 
   private Cleaner.Cleanable cleanable;
-  private Action<T> action;
+  private Action<R> action;
 
-  public CleanableObject(Cleaner cleaner, CleanableResource<T> dispose) {
+  public CleanableResource(Cleaner cleaner, CloseableResource<? extends R> dispose) {
     this.action = new Action<>(dispose);
     this.cleanable = cleaner.register(this, action);
   }
 
-  protected final T get() {
-    Action<T> action = this.action;
-    CleanableResource<T> resource;
+  /**
+   * @return the actual resource or {@code null} when not available
+   */
+  protected final R get() {
+    Action<R> action = this.action;
+    CloseableResource<? extends R> resource;
     return action != null && (resource = action.get()) != null ? resource.get() : null;
   }
 
-  protected final T getOrDie() {
-    T resource = get();
+  /**
+   * @return the actual resource or throws an {@link IllegalStateException} when not available
+   */
+  protected final R getOrDie() {
+    R resource = get();
     if (resource == null) {
       throw new IllegalStateException();
     } else {
@@ -68,7 +79,7 @@ public class CleanableObject<T> {
     if (timeout.isNegative()) {
       throw new IllegalArgumentException();
     }
-    Action<T> action;
+    Action<R> action;
     Cleaner.Cleanable cleanable;
     synchronized (this) {
       action = this.action;

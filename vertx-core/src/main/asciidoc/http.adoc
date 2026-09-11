@@ -92,7 +92,17 @@ WARNING: browsers do not support `h2c`, for serving websites you should use `h2`
 When a server accepts an HTTP/2 connection, it sends to the client its {@link io.vertx.core.http.Http2ServerConfig#getInitialSettings initial settings}. These settings define how the client can use the connection, the default initial settings for a server are:
 
 - {@link io.vertx.core.http.Http2Settings#getMaxConcurrentStreams}: `100` as recommended by the HTTP/2 RFC
+- {@link io.vertx.core.http.Http2Settings#getInitialWindowSize}: `1 MiB`
 - the default HTTP/2 settings values for the remaining settings
+
+HTTP/2 flow control uses two independent receive windows. The initial window size in
+{@link io.vertx.core.http.Http2ServerConfig#getInitialSettings} applies to each stream, while
+{@link io.vertx.core.http.Http2ServerConfig#getConnectionWindowSize} applies to the combined data received by all
+streams on a connection. The connection window defaults to `16 MiB`.
+
+Applications receiving large request bodies, such as large gRPC messages, can tune both values. Larger windows improve
+throughput on connections with significant bandwidth or latency, at the cost of allowing more data to be buffered before
+back-pressure is applied.
 
 === Configuring an HTTP/3 server
 
@@ -677,6 +687,10 @@ Or use {@link io.vertx.core.http.HttpServerResponse#putTrailer}.
 {@link examples.HttpExamples#serverResponsePutTrailer}
 ----
 
+NOTE: accessing {@link io.vertx.core.http.HttpServerResponse#trailers} commits the response to sending trailers when it
+ends: an HTTP/2 or HTTP/3 stream is then ended by a trailers frame instead of the last data frame, even when no trailer
+was added. Only call it when you actually write trailers.
+
 ==== Serving files directly from disk or the classpath
 
 If you were writing a web server, one way to serve a file from disk would be to open it as an {@link io.vertx.core.file.AsyncFile}
@@ -922,6 +936,12 @@ You create an {@link io.vertx.core.http.HttpClient} instance with the default co
 
 By default, the client supports HTTP/1, HTTP/2 in plain text.
 
+IMPORTANT: Keep a reference to the client for as long as you use it. A client that is no longer referenced is
+shut down when it is garbage collected, as if {@link io.vertx.core.http.HttpClient#shutdown()} had been called: new
+requests are refused and connections are closed, which can surface as unexpected `Connection was closed` or
+`Client is closed` failures. Typically you store the client in a field of the verticle or of the component that uses it,
+instead of creating it inline in the code that performs a request.
+
 === Configuring an HTTP client
 
 If you want to configure the client, you create it as follows:
@@ -978,6 +998,13 @@ To perform `h2` requests, TLS must be enabled:
 ----
 
 `{@link io.vertx.core.http.Http2ClientConfig}` captures the configuration of HTTP/2 specific aspects.
+
+The HTTP/2 client receive window defaults to `1 MiB` per stream and `16 MiB` for the connection. Applications receiving
+large response bodies can tune the stream window with
+{@link io.vertx.core.http.Http2ClientConfig#getInitialSettings} and the connection window with
+{@link io.vertx.core.http.Http2ClientConfig#setConnectionWindowSize(int)}. Larger windows improve throughput on
+connections with significant bandwidth or latency, at the cost of allowing more data to be buffered before back-pressure
+is applied.
 
 === Configuring an HTTP/3 client
 
@@ -2310,23 +2337,27 @@ The {@link io.vertx.core.http.ServerWebSocket} instance enables you to retrieve 
 
 ==== WebSockets on the client
 
-e Vert.x {@link io.vertx.core.http.WebSocketClient} supports WebSockets.
+The Vert.x {@link io.vertx.core.http.WebSocketClient} supports WebSockets.
 
- You can connect a WebSocket to a server using one of the {@link io.vertx.core.http.WebSocketClient#connect} operations.
+You can connect a WebSocket to a server using one of the {@link io.vertx.core.http.WebSocketClient#connect} operations.
 
- The returned future will be completed with an instance of {@link io.vertx.core.http.WebSocket} when the connection has been made:
+The returned future will be completed with an instance of {@link io.vertx.core.http.WebSocket} when the connection has been made:
 [source,$lang]
 ----
 {@link examples.HttpExamples#clientWebSocketConnect}
 ----
 
-en connecting from a non Vert.x thread, you can create a {@link io.vertx.core.http.ClientWebSocket}, configure its handlers and
+IMPORTANT: Like the HTTP client, the WebSocket client is shut down when it is no longer referenced and garbage collected,
+which closes its WebSockets, including those with a handshake in progress. Keep a reference to the client for as long as
+its WebSockets are in use.
+
+When connecting from a non Vert.x thread, you can create a {@link io.vertx.core.http.ClientWebSocket}, configure its handlers and
 then connect to the server:
 
- [source,$lang]
- ----
- {@link examples.HttpExamples#clientWebSocketConfigurationAndConnect}
- ----
+[source,$lang]
+----
+{@link examples.HttpExamples#clientWebSocketConfigurationAndConnect}
+----
 
 By default, the client sets the `origin` header to the server host, e.g http://www.example.com. Some servers will refuse
 such request, you can configure the client to not set this header.
@@ -2417,7 +2448,8 @@ used with binary frames that are no split over multiple frames.
 
 === Using a proxy for HTTP/HTTPS connections
 
-The {@link io.vertx.core.http.HttpClient} supports accessing HTTP/HTTPS URLs via an HTTP proxy (e.g. Squid), a _SOCKS4a_, or a _SOCKS5_ proxy.
+The {@link io.vertx.core.http.HttpClient} supports accessing HTTP/HTTPS URLs via an HTTP proxy (e.g. Squid), an HTTPS proxy
+(an HTTP proxy reached over SSL/TLS), a _SOCKS4a_, or a _SOCKS5_ proxy.
 The `CONNECT` protocol uses HTTP/1.x but can connect to HTTP/1.x and HTTP/2 servers.
 
 Connecting to `h2c` (unencrypted HTTP/2 servers) is likely not supported by http proxies since they will support HTTP/1.1 only.
@@ -2435,6 +2467,11 @@ Here's an example of using an HTTP proxy:
 When the client connects to an HTTP URL, it connects to the proxy server and provides the full URL in the HTTP request, like `GET http://www.somehost.com/path/file.html HTTP/1.1`.
 
 When the client connects to an HTTPS URL, it asks the proxy to create a tunnel to the remote host with the `CONNECT` method.
+
+To connect to the proxy itself over SSL/TLS, set the proxy type to {@link io.vertx.core.net.ProxyType#HTTPS} and configure
+the proxy SSL options with {@link io.vertx.core.net.ProxyOptions#setSslOptions(io.vertx.core.net.ClientSSLOptions)}. The
+proxy SSL options are independent of the target server's SSL options, and hostname verification of the proxy certificate is
+enabled by default.
 
 For a SOCKS5 proxy:
 

@@ -12,8 +12,8 @@ package io.vertx.tests.vertx;
 
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
-import io.vertx.core.impl.CleanableObject;
-import io.vertx.core.impl.CleanableResource;
+import io.vertx.core.internal.CleanableResource;
+import io.vertx.core.internal.CloseableResource;
 import io.vertx.core.internal.VertxInternal;
 import io.vertx.test.core.VertxTestBase;
 import org.junit.Before;
@@ -22,6 +22,7 @@ import org.junit.Test;
 import java.lang.ref.Cleaner;
 import java.lang.ref.WeakReference;
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static io.vertx.tests.vertx.VertxTest.runGC;
@@ -57,9 +58,9 @@ public class CleanableObjectTest extends VertxTestBase {
     AtomicInteger count = new AtomicInteger();
     TestResource resource = new TestResource() {
       @Override
-      public Future<Void> shutdown(Duration duration) {
+      public Future<Void> shutdown(Duration timeout) {
         count.incrementAndGet();
-        return super.shutdown(duration);
+        return super.shutdown(timeout);
       }
     };
     CleanableTest object = new CleanableTest(cleaner, resource);
@@ -87,7 +88,31 @@ public class CleanableObjectTest extends VertxTestBase {
     runGC(() -> resourceRef.get() == null);
   }
 
-  private static class TestResource implements CleanableResource<TestResource> {
+  @Test
+  public void testCloseCollectedResource() {
+    AtomicBoolean actuallyShutdown = new AtomicBoolean();
+    CloseableResource<Object> resource = new CloseableResource<>() {
+      @Override
+      public Object get() {
+        return null;
+      }
+      @Override
+      public Future<Void> shutdown(Duration timeout) {
+        actuallyShutdown.set(true);
+        return Future.succeededFuture();
+      }
+    };
+    CleanableResource<Object> object = new CleanableResource<>(cleaner, resource);
+    WeakReference<CloseableResource<Object>> reference = new WeakReference<>(resource);
+    resource = null;
+    runGC(() -> reference.get() == null);
+    Future<Void> shutdown = object.shutdown(Duration.ZERO);
+    assertNotNull(shutdown);
+    assertTrue(shutdown.succeeded());
+    assertFalse(actuallyShutdown.get());
+  }
+
+  private static class TestResource implements CloseableResource<TestResource> {
 
     private volatile Duration shutdownDuration;
     private Promise<Void> shutdownCompletion = Promise.promise();
@@ -97,13 +122,13 @@ public class CleanableObjectTest extends VertxTestBase {
       return this;
     }
     @Override
-    public Future<Void> shutdown(Duration duration) {
-      shutdownDuration = duration;
+    public Future<Void> shutdown(Duration timeout) {
+      shutdownDuration = timeout;
       return shutdownCompletion.future();
     }
   }
 
-  private static class CleanableTest extends CleanableObject<TestResource> {
+  private static class CleanableTest extends CleanableResource<TestResource> {
     public CleanableTest(Cleaner cleaner, TestResource resource) {
       super(cleaner, resource);
     }

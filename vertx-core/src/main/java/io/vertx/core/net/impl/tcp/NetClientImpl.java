@@ -16,17 +16,15 @@ import io.netty.channel.*;
 import io.netty.channel.Channel;
 import io.netty.handler.logging.ByteBufFormat;
 import io.netty.handler.logging.LoggingHandler;
+import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.stream.ChunkedWriteHandler;
 import io.netty.handler.timeout.IdleStateHandler;
 import io.netty.util.concurrent.GenericFutureListener;
 import io.vertx.core.Completable;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
-import io.vertx.core.impl.CleanableResource;
+import io.vertx.core.internal.*;
 import io.vertx.core.impl.Utils;
-import io.vertx.core.internal.ContextInternal;
-import io.vertx.core.internal.PromiseInternal;
-import io.vertx.core.internal.VertxInternal;
 import io.vertx.core.impl.buffer.VertxByteBufAllocator;
 import io.vertx.core.internal.logging.Logger;
 import io.vertx.core.internal.logging.LoggerFactory;
@@ -54,7 +52,7 @@ import java.util.function.Supplier;
  * @author <a href="http://tfox.org">Tim Fox</a>
  * @author <a href="mailto:julien@julienviet.com">Julien Viet</a>
  */
-public class NetClientImpl implements NetClientInternal, CleanableResource<NetClientInternal> {
+public class NetClientImpl implements NetClientInternal {
 
   private static final Logger log = LoggerFactory.getLogger(NetClientImpl.class);
   protected final Duration idleTimeout;
@@ -102,22 +100,20 @@ public class NetClientImpl implements NetClientInternal, CleanableResource<NetCl
     this.protocol = protocol;
   }
 
-  protected void initChannel(ChannelPipeline pipeline, boolean ssl) {
+  protected void initChannel(ChannelPipeline pipeline) {
     if (logging != null) {
       pipeline.addLast("logging", new LoggingHandler(logging));
     }
-    if (ssl || !vertx.transport().supportFileRegion()) {
+    // The origin can be plaintext while the channel is still TLS wrapped, e.g. when tunnelling through an
+    // HTTPS proxy, so the file region support is decided from the pipeline rather than from the origin.
+    boolean sslChannel = pipeline.get(SslHandler.class) != null;
+    if (sslChannel || !vertx.transport().supportFileRegion()) {
       // only add ChunkedWriteHandler when SSL is enabled otherwise it is not needed as FileRegion is used.
       pipeline.addLast("chunkedWriter", new ChunkedWriteHandler());       // For large file / sendfile support
     }
     if (idleTimeout.toMillis() > 0 || readIdleTimeout.toMillis() > 0 || writeIdleTimeout.toMillis() > 0) {
       pipeline.addLast("idle", new IdleStateHandler(readIdleTimeout.toMillis(), writeIdleTimeout.toMillis(), idleTimeout.toMillis(), TimeUnit.MILLISECONDS));
     }
-  }
-
-  @Override
-  public NetClientInternal get() {
-    return this;
   }
 
   @Override
@@ -183,11 +179,6 @@ public class NetClientImpl implements NetClientInternal, CleanableResource<NetCl
     } finally {
       completion.succeed();
     }
-  }
-
-  @Override
-  public void close(Completable<Void> completion) {
-    channelGroup.shutdown(0, TimeUnit.SECONDS).onComplete(completion);
   }
 
   @Override
@@ -354,7 +345,7 @@ public class NetClientImpl implements NetClientInternal, CleanableResource<NetCl
         }
       }
 
-      ChannelProvider channelProvider = new ChannelProvider(bootstrap, sslContextProvider, context)
+      ChannelProvider channelProvider = new ChannelProvider(bootstrap, sslContextProvider, sslContextManager, context)
         .proxyOptions(proxyOptions);
 
       SocketAddress captured = remoteAddress;
@@ -373,7 +364,6 @@ public class NetClientImpl implements NetClientInternal, CleanableResource<NetCl
             future.getNow(),
             connectHandler,
             captured,
-            connectOptions.isSsl(),
             registerWriteHandlers);
         } else {
           failed(context, null, future.cause(), connectHandler);
@@ -389,10 +379,9 @@ public class NetClientImpl implements NetClientInternal, CleanableResource<NetCl
                          Channel ch,
                          Promise<NetSocket> connectHandler,
                          SocketAddress remoteAddress,
-                         boolean ssl,
                          boolean registerWriteHandlers) {
     channelGroup.add(ch);
-    initChannel(ch.pipeline(), ssl);
+    initChannel(ch.pipeline());
     VertxHandler<NetSocketImpl> handler = VertxHandler.create(ctx -> new NetSocketImpl(
       context,
       ctx,

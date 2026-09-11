@@ -10,13 +10,12 @@
  */
 package io.vertx.core.http.impl;
 
-import io.vertx.core.Completable;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.http.*;
 import io.vertx.core.http.HttpClientConnection;
-import io.vertx.core.impl.CleanableObject;
-import io.vertx.core.impl.CleanableResource;
+import io.vertx.core.internal.CleanableResource;
+import io.vertx.core.internal.CloseableResource;
 import io.vertx.core.internal.VertxInternal;
 import io.vertx.core.internal.http.HttpClientTransport;
 import io.vertx.core.internal.http.HttpClientInternal;
@@ -33,9 +32,9 @@ import java.util.function.Function;
  *
  * @author <a href="mailto:julien@julienviet.com">Julien Viet</a>
  */
-public class CleanableHttpClient extends CleanableObject<HttpClientInternal> implements HttpClientInternal {
+public class CleanableHttpClient extends CleanableResource<HttpClientInternal> implements HttpClientInternal {
 
-  public CleanableHttpClient(Cleaner cleaner, CleanableResource<HttpClientInternal> dispose) {
+  public CleanableHttpClient(Cleaner cleaner, CloseableResource<? extends HttpClientInternal> dispose) {
     super(cleaner, dispose);
   }
 
@@ -98,11 +97,6 @@ public class CleanableHttpClient extends CleanableObject<HttpClientInternal> imp
   @Override
   public Future<Void> closeFuture() {
     return getOrDie().closeFuture();
-  }
-
-  @Override
-  public void close(Completable<Void> completion) {
-    getOrDie().close(completion);
   }
 
   @Override

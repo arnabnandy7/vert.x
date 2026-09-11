@@ -256,7 +256,8 @@ public class Http1xTest extends HttpTest {
     assertEquals(100, options.getMaxHeaderSize());
 
     Http2Settings initialSettings = randomHttp2Settings();
-    assertEquals(new Http2Settings(), options.getInitialSettings());
+    assertEquals(new Http2Settings()
+      .setInitialWindowSize(HttpClientOptions.DEFAULT_INITIAL_SETTINGS_INITIAL_WINDOW_SIZE), options.getInitialSettings());
     assertEquals(options, options.setInitialSettings(initialSettings));
     assertEquals(initialSettings, options.getInitialSettings());
 
@@ -417,7 +418,9 @@ public class Http1xTest extends HttpTest {
     assertTrue(options.getSslEngineOptions() instanceof JdkSSLEngineOptions);
 
     Http2Settings initialSettings = randomHttp2Settings();
-    assertEquals(new Http2Settings().setMaxConcurrentStreams(HttpServerOptions.DEFAULT_INITIAL_SETTINGS_MAX_CONCURRENT_STREAMS), options.getInitialSettings());
+    assertEquals(new Http2Settings()
+      .setMaxConcurrentStreams(HttpServerOptions.DEFAULT_INITIAL_SETTINGS_MAX_CONCURRENT_STREAMS)
+      .setInitialWindowSize(HttpServerOptions.DEFAULT_INITIAL_SETTINGS_INITIAL_WINDOW_SIZE), options.getInitialSettings());
     assertEquals(options, options.setInitialSettings(initialSettings));
     assertEquals(initialSettings, options.getInitialSettings());
 
@@ -426,7 +429,7 @@ public class Http1xTest extends HttpTest {
     assertEquals(options, options.setAlpnVersions(alpnVersions));
     assertEquals(alpnVersions, options.getAlpnVersions());
 
-    assertEquals(HttpClientOptions.DEFAULT_HTTP2_CONNECTION_WINDOW_SIZE, options.getHttp2ConnectionWindowSize());
+    assertEquals(HttpServerOptions.DEFAULT_HTTP2_CONNECTION_WINDOW_SIZE, options.getHttp2ConnectionWindowSize());
     rand = TestUtils.randomPositiveInt();
     assertEquals(options, options.setHttp2ConnectionWindowSize(rand));
     assertEquals(rand, options.getHttp2ConnectionWindowSize());
@@ -2918,21 +2921,21 @@ public class Http1xTest extends HttpTest {
   }
 
   @Test
-  public void testResetClientRequestNotYetSent(Checkpoint checkpoint) throws Exception {
-    testResetClientRequestNotYetSent(checkpoint, false, false);
+  public void testResetClientStreamNotYetSent(Checkpoint checkpoint) throws Exception {
+    testResetClientStreamNotYetSent(checkpoint, false, false);
   }
 
   @Test
-  public void testResetKeepAliveClientRequestNotYetSent(Checkpoint checkpoint) throws Exception {
-    testResetClientRequestNotYetSent(checkpoint, true, false);
+  public void testResetKeepAliveClientStreamNotYetSent(Checkpoint checkpoint) throws Exception {
+    testResetClientStreamNotYetSent(checkpoint, true, false);
   }
 
   @Test
-  public void testResetPipelinedClientRequestNotYetSent(Checkpoint checkpoint) throws Exception {
-    testResetClientRequestNotYetSent(checkpoint, true, true);
+  public void testResetPipelinedStreamRequestNotYetSent(Checkpoint checkpoint) throws Exception {
+    testResetClientStreamNotYetSent(checkpoint, true, true);
   }
 
-  private void testResetClientRequestNotYetSent(Checkpoint checkpoint, boolean keepAlive, boolean pipelined) throws Exception {
+  private void testResetClientStreamNotYetSent(Checkpoint checkpoint, boolean keepAlive, boolean pipelined) throws Exception {
     NetServer server = vertx.createNetServer();
     AtomicInteger numReq = new AtomicInteger();
     server.connectHandler(conn -> {
@@ -2967,6 +2970,27 @@ public class Http1xTest extends HttpTest {
         .compose(HttpClientResponse::end))
       .await();
     assertEquals(1, numReq.get());
+  }
+
+  @Test
+  public void testResetClientStreamClosed() throws Exception {
+    server.requestHandler(request -> {
+      request.response().end();
+    });
+    startServer();
+    io.vertx.core.http.HttpClientConnection connection = client
+      .connect(requestOptions)
+      .await();
+    for (int i = 0;i < 2;i++) {
+      HttpClientRequest request = connection
+        .request(requestOptions)
+        .compose(req -> req
+          .send()
+          .expecting(HttpResponseExpectation.SC_OK)
+          .compose(HttpClientResponse::end).map(req))
+        .await();
+      request.reset();
+    }
   }
 
   @Test

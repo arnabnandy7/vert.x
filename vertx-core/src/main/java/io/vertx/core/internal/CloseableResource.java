@@ -8,29 +8,35 @@
  *
  * SPDX-License-Identifier: EPL-2.0 OR Apache-2.0
  */
-package io.vertx.core.impl;
+package io.vertx.core.internal;
 
 import io.vertx.core.Future;
 
 import java.time.Duration;
 
 /**
- * Cleanable resource.
+ * Closeable resource.
  *
  * @author <a href="mailto:julien@julienviet.com">Julien Viet</a>
  */
-public interface CleanableResource<T> {
+public interface CloseableResource<R> extends Closeable {
+
+  static <R extends Closeable> CloseableResource<R> of(R resource) {
+    return new CloseableResource<R>() {
+      @Override
+      public R get() {
+        return resource;
+      }
+      @Override
+      public Future<Void> shutdown(Duration timeout) {
+        return resource.shutdown(timeout);
+      }
+    };
+  }
 
   /**
    * @return the actual resource
    */
-  T get();
-
-  /**
-   * Shutdown the resource
-   * @param duration the timeout
-   * @return the future completed after shutdown
-   */
-  Future<Void> shutdown(Duration duration);
+  R get();
 
 }

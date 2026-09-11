@@ -12,6 +12,7 @@
 package io.vertx.core.http.impl.http2;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.EventLoop;
 import io.netty.handler.codec.http2.EmptyHttp2Headers;
@@ -159,6 +160,10 @@ abstract class DefaultHttp2Stream<S extends DefaultHttp2Stream<S>> implements Ht
     return context;
   }
 
+  public final ByteBufAllocator allocator() {
+    return connection.allocator();
+  }
+
   public void priority(StreamPriority streamPriority) {
     this.priority = streamPriority;
   }
@@ -231,7 +236,8 @@ abstract class DefaultHttp2Stream<S extends DefaultHttp2Stream<S>> implements Ht
   public void onWritabilityChanged() {
     writable = !writable;
     if (writable) {
-      outboundQueue.tryDrain();
+      // Let the flow controller finish notifying streams before writes can change writability again.
+      connection.context().eventLoop().execute(outboundQueue::tryDrain);
     }
   }
 

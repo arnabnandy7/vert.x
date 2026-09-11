@@ -10,11 +10,10 @@
  */
 package io.vertx.core.net.impl.tcp;
 
-import io.vertx.core.Completable;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
-import io.vertx.core.impl.CleanableObject;
-import io.vertx.core.impl.CleanableResource;
+import io.vertx.core.internal.CleanableResource;
+import io.vertx.core.internal.CloseableResource;
 import io.vertx.core.internal.ContextInternal;
 import io.vertx.core.internal.net.NetClientInternal;
 import io.vertx.core.net.*;
@@ -28,9 +27,9 @@ import java.lang.ref.Cleaner;
  *
  * @author <a href="mailto:julien@julienviet.com">Julien Viet</a>
  */
-public class CleanableNetClient extends CleanableObject<NetClientInternal> implements NetClientInternal {
+public class CleanableNetClient extends CleanableResource<NetClientInternal> implements NetClientInternal {
 
-  public CleanableNetClient(Cleaner cleaner, CleanableResource<NetClientInternal> resource) {
+  public CleanableNetClient(Cleaner cleaner, CloseableResource<NetClientInternal> resource) {
     super(cleaner, resource);
   }
 
@@ -66,11 +65,6 @@ public class CleanableNetClient extends CleanableObject<NetClientInternal> imple
   @Override
   public Future<Boolean> updateSSLOptions(ClientSSLOptions options, boolean force) {
     return getOrDie().updateSSLOptions(options, force);
-  }
-
-  @Override
-  public void close(Completable<Void> completion) {
-    getOrDie().close(completion);
   }
 
   @Override

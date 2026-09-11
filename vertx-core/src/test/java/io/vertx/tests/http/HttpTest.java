@@ -30,8 +30,6 @@ import io.vertx.core.http.impl.*;
 import io.vertx.core.http.impl.headers.Http1xHeaders;
 import io.vertx.core.http.impl.tcp.TcpHttpServer;
 import io.vertx.core.internal.ContextInternal;
-import io.vertx.core.internal.http.HttpClientInternal;
-import io.vertx.core.internal.net.endpoint.EndpointResolverInternal;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.net.*;
 import io.vertx.core.streams.ReadStream;
@@ -6371,35 +6369,6 @@ public abstract class HttpTest extends SimpleHttpTest2 {
     }
   }
 
-  @WithDnsServer(records = {@DnsRecord(name = "vertx.io", address = "127.0.0.1"), @DnsRecord(name = "vertx.io", address = "127.0.0.2")})
-  @Test
-  public void testDnsClientSideLoadBalancingDisabled(Checkpoint checkpoint) throws Exception {
-    testDnsClientSideLoadBalancing(checkpoint, false);
-  }
-
-  @WithDnsServer(records = {@DnsRecord(name = "vertx.io", address = "127.0.0.1"), @DnsRecord(name = "vertx.io", address = "127.0.0.2")})
-  @Test
-  public void testDnsClientSideLoadBalancingEnabled(Checkpoint checkpoint) throws Exception {
-    testDnsClientSideLoadBalancing(checkpoint, true);
-  }
-
-  private void testDnsClientSideLoadBalancing(Checkpoint checkpoint, boolean enabled) throws Exception {
-    AtomicInteger val = new AtomicInteger();
-    HttpClient client = config
-      .forClient()
-      .setConnectTimeout(Duration.ofMillis(500))
-      .builder(vertx)
-      .withLoadBalancer(enabled ? endpoints -> () -> {
-        val.set(endpoints.size());
-        return 0;
-      } : null)
-      .build();
-    client.request(HttpMethod.GET,"vertx.io", "/").onComplete(TestUtils.onFailure(err -> {
-      assertEquals(enabled ? 2 : 0, val.get());
-      checkpoint.succeed();
-    }));
-  }
-
   @Test
   public void testConcurrentWrites1() throws Exception {
     testConcurrentWrites(req -> req
@@ -6551,45 +6520,6 @@ public abstract class HttpTest extends SimpleHttpTest2 {
         .expecting(HttpResponseExpectation.SC_OK)
         .compose(HttpClientResponse::end))
       .await();
-  }
-
-  @Test
-  public void testResolverKeepAlive() throws Exception {
-    client = ((HttpClientBuilderInternal)httpClientBuilder()
-      .with(new PoolOptions().setCleanerPeriod(50)))
-      .resolverIdleTimeout(Duration.ofMillis(50))
-      .build();
-    server.requestHandler(request -> {
-      request.response().end();
-    });
-    startServer(testAddress);
-    // Create a connection to the server first (warm-up) before
-    // we test the origin resolver
-    client.request(requestOptions)
-      .compose(request -> request
-        .send()
-        .expecting(HttpResponseExpectation.SC_OK)
-        .compose(HttpClientResponse::end))
-      .await();
-    long now = System.currentTimeMillis();
-    vertx.setPeriodic(1, id -> {
-      if (System.currentTimeMillis() - now > 500) {
-        vertx.cancelTimer(id);
-      }
-      client.request(requestOptions)
-        .compose(request -> request
-          .send()
-          .expecting(HttpResponseExpectation.SC_OK)
-          .compose(HttpClientResponse::end));
-    });
-    EndpointResolverInternal originResolver = ((HttpClientInternal) client).originResolver();
-    assertWaitUntil(() -> originResolver.size() == 1);
-    long abc = System.currentTimeMillis();
-    assertWaitUntil(() -> originResolver.size() == 0);
-    long delta = System.currentTimeMillis() - abc;
-    System.out.println(delta);
-    assertTrue(delta >= 500);
-    assertTrue(delta <= 1000);
   }
 
   @Test

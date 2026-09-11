@@ -12,11 +12,12 @@ package io.vertx.core.internal;
 
 import io.netty.channel.EventLoopGroup;
 import io.vertx.core.*;
+import io.vertx.core.Closeable;
 import io.vertx.core.datagram.DatagramSocket;
 import io.vertx.core.datagram.DatagramSocketOptions;
 import io.vertx.core.dns.DnsClient;
 import io.vertx.core.dns.DnsClientOptions;
-import io.vertx.core.eventbus.EventBus;
+import io.vertx.core.internal.eventbus.EventBusInternal;
 import io.vertx.core.file.FileSystem;
 import io.vertx.core.http.*;
 import io.vertx.core.http.impl.HttpClientBuilderInternal;
@@ -48,7 +49,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
@@ -72,8 +72,13 @@ public abstract class VertxWrapper implements VertxInternal {
   }
 
   @Override
-  public <C> C createSharedResource(String resourceKey, String resourceName, CloseFuture closeFuture, Function<CloseFuture, C> supplier) {
-    return delegate.createSharedResource(resourceKey, resourceName, closeFuture, supplier);
+  public <C> CloseableResource<C> registerResource(CloseableResource<C> resource) {
+    return delegate.registerResource(resource);
+  }
+
+  @Override
+  public <C extends io.vertx.core.internal.Closeable> CloseableResource<C> createSharedResource(String resourceKey, String resourceName, Supplier<C> factory) {
+    return delegate.createSharedResource(resourceKey, resourceName, factory);
   }
 
   @Override
@@ -122,7 +127,7 @@ public abstract class VertxWrapper implements VertxInternal {
   }
 
   @Override
-  public EventBus eventBus() {
+  public EventBusInternal eventBus() {
     return delegate.eventBus();
   }
 
@@ -312,7 +317,7 @@ public abstract class VertxWrapper implements VertxInternal {
   }
 
   @Override
-  public WorkerPool createSharedWorkerPool(String name, int poolSize, long maxExecuteTime, TimeUnit maxExecuteTimeUnit) {
+  public CloseableResource<WorkerPool> createSharedWorkerPool(String name, int poolSize, long maxExecuteTime, TimeUnit maxExecuteTimeUnit) {
     return delegate.createSharedWorkerPool(name, poolSize, maxExecuteTime, maxExecuteTimeUnit);
   }
 

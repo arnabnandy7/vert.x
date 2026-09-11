@@ -14,6 +14,7 @@ package io.vertx.core.http.impl;
 import io.vertx.core.*;
 import io.vertx.core.http.*;
 import io.vertx.core.internal.CloseSequence;
+import io.vertx.core.internal.Closeable;
 import io.vertx.core.internal.VertxInternal;
 import io.vertx.core.net.*;
 import io.vertx.core.net.impl.ProxyFilter;
@@ -55,10 +56,6 @@ public abstract class HttpClientBase implements MetricsProvider, Closeable {
 
   public Future<Void> closeFuture() {
     return closeSequence.future();
-  }
-
-  public void close(Completable<Void> completion) {
-    closeSequence.close(completion);
   }
 
   private ProxyOptions getProxyOptions(ProxyOptions proxyOptions) {

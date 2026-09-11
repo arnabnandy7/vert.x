@@ -12,6 +12,7 @@
 package io.vertx.core.http.impl.http1;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import io.netty.handler.codec.DecoderResult;
@@ -147,6 +148,13 @@ public class Http1ClientConnection extends Http1Connection implements io.vertx.c
   @Override
   public HostAndPort authority() {
     return authority;
+  }
+
+  @Override
+  public boolean isSsl() {
+    // Report the origin ssl, not the pipeline: in forward-proxy mode the TLS leg to an HTTPS proxy is
+    // itself the pipeline "ssl" handler.
+    return ssl;
   }
 
   @Override
@@ -364,7 +372,7 @@ public class Http1ClientConnection extends Http1Connection implements io.vertx.c
     }
     stream.reset = true;
     boolean removed = pending.remove(stream);
-    if (!removed) {
+    if (!removed && inflight.contains(stream)) {
       close();
     }
     return removed;
@@ -647,6 +655,11 @@ public class Http1ClientConnection extends Http1Connection implements io.vertx.c
     @Override
     public ContextInternal context() {
       return context;
+    }
+
+    @Override
+    public ByteBufAllocator allocator() {
+      return conn.channel().alloc();
     }
 
     @Override
